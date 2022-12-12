@@ -21,6 +21,12 @@ const GameState = {
     ENDED: "ended"
 };
 
+const TowerTypes = {
+    "Base": 0,
+    "Gun": 1,
+    "Miner" : 2,
+}
+
 class User {
     constructor(id, username, passhash = null) {
         this.id = id;
@@ -94,11 +100,11 @@ class Game {
         this.gameState = GameState.STARTING;
         
         this.room.users.forEach(user => {
-            user.gameInfo = {ready: false, health: 100, money: 10, towers: [], units: []};
+            user.gameInfo = {ready: false, life: 100, money: 10, production: 10, towers: [], units: []};
         });
     }
 
-    setReady(user) {
+    async setReady(user) {
         if (!this.room.users.find(u => u.id === user.id)) {
             return {error: "Not in game"};
         }
@@ -113,11 +119,127 @@ class Game {
             this.allReady = true;
             this.gameState = GameState.ACTIVE;
 
-            io.to(this.room.id).emit("allReady", {data: {roomId: this.room.id}, users: this.room.getUsers()});
+            let sockets = await io.in(this.room.id).fetchSockets();
+
+            let base1 = Math.floor(Math.random()* 1000);
+            let base2 = base1;
+            while (base2 == base1) {
+                base2 = Math.floor(Math.random()* 1000);
+            }
+            
+            let i = 0;
+            for (const socket of sockets) {
+                io.to(socket.id).emit("allReady", {
+                    data: {roomId: this.room.id },
+                    bases: {friendlyBase: i == 0 ? base1 : base2, enemyBase: i == 0 ? base2 : base1},
+                    users: this.room.getUsers()
+                });
+                i++;
+            }
         }
         
-        
         return {data: {roomId: this.room.id}, users: this.room.getUsers()};
+    }
+
+    setTowers(socket, user, towers) {
+        if (!this.room.users.find(u => u.id === user.id)) {
+            return {error: "Not in game"};
+        }
+
+        if (this.gameState !== GameState.ACTIVE) {
+            return {error: "Game not running"};
+        }
+
+        let newTowers = towers.map(tower => {
+            tower.team = tower.team == "Friendly" ? 1 : 0;
+            tower.type = TowerTypes[tower.type];
+            tower.rotation = tower.rotation;
+            return tower;
+        });
+
+        user.gameInfo.towers = towers.filter(tower => tower.team == 0);
+
+        // emit to everyone but the user
+        socket.broadcast.to(this.room.id).emit("setTowers", {data: {roomId: this.room.id}, towerData: newTowers, users: this.room.getUsers()});
+
+        return {
+            data: {roomId: this.room.id},
+            towerData: newTowers,
+            users: this.room.getUsers()
+        };
+    }
+
+    setInfo(socket, user, info) {
+        if (!this.room.users.find(u => u.id === user.id)) {
+            return {error: "Not in game"};
+        }
+
+        if (this.gameState !== GameState.ACTIVE) {
+            return {error: "Game not running"};
+        }
+
+        user.gameInfo.life = info.life;
+        user.gameInfo.money = info.money;
+        user.gameInfo.production = info.production;
+
+        let newInfo = {
+            life: info.life,
+            money: info.money,
+            production: info.production,
+        };
+
+        let otherUser = this.room.users.find(u => u.id != user.id);
+        
+        let otherInfo = {
+            life: otherUser.gameInfo.life,
+            money: otherUser.gameInfo.money,
+            production: otherUser.gameInfo.production,
+        };
+
+        socket.broadcast.to(this.room.id).emit("setInfo", {data: {roomId: this.room.id}, enemyInfo: newInfo, friendlyInfo: otherInfo, users: this.room.getUsers()});
+
+        if (user.gameInfo.life <= 0 || otherUser.gameInfo.life <= 0) {
+            this.gameOver();
+        }
+
+        return {
+            data: {roomId: this.room.id},
+            enemyInfo: otherInfo,
+            friendlyInfo: newInfo,
+            users: this.room.getUsers()
+        };
+    }
+
+    gameOver() {
+        if (this.gameState !== GameState.ACTIVE) {
+            return {error: "Game not running"};
+        }
+        
+        if (this.room.users.length != 2) {
+            let winner = this.room.users.find(user => user.gameInfo.life > 0);
+            io.to(this.room.id).emit("gameOver", {data: {roomId: this.room.id}, winner: winner.username, winType: "abandonment", users: this.room.getUsers()});
+        }
+        else {
+            let loser = this.room.users.find(user => user.gameInfo.life <= 0);
+
+            if (loser) {
+                let winner = this.room.users.find(user => user.id != loser.id);
+
+                io.to(this.room.id).emit("gameOver", {data: {roomId: this.room.id}, winner: winner.username, loser: loser.username, winType: "survival", users: this.room.getUsers()});
+            }
+            else {
+                return {error: "Win conditions not met"};
+            }
+        }
+        
+
+        this.gameState = GameState.ENDED;
+        
+        this.room.users.forEach(user => {
+            user.gameInfo = null;
+        });
+
+        this.room.game = null;
     }
 }
 
@@ -147,7 +269,7 @@ class Room {
     startGame() {
         if (this.game) {
             return {error: "Game already started"};
-        }
+        } 
 
         if (this.users.length < 2) {
             return {error: "Not enough players"};
@@ -161,12 +283,8 @@ class Room {
     }
 
     endGame() {
+        this.game.gameOver();
         this.game = null;
-        
-        let data = {
-            roomId: this.id,
-        };
-        io.to(this.id).emit("end", {data: data, users: this.getUsers()});
     }
 
     addUser(user) {
@@ -206,8 +324,8 @@ class Room {
         io.to(this.id).emit("users", {data: {roomId: this.id}, users: this.getUsers()});
 
         console.log("really removing user " + JSON.stringify(user), this.users, this.id);
-
-        if (this.game) {
+        
+        if (this.game?.gameState == GameState.ACTIVE) {
             this.endGame();
         }
 
@@ -501,7 +619,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('ready', (data, callback) => {
+    socket.on('ready', async (data, callback) => {
         if (unauth.has(socket.id) || !active.has(user)) {
             callback({error: "Not authenticated"});
             return;
@@ -522,7 +640,77 @@ io.on('connection', (socket) => {
             return;
         }
         
-        let result = room.game.setReady(user);
+        let result = await room.game.setReady(user);
+
+        if (result.error) {
+            callback({error: result.error});
+        }
+        else {
+            callback({data: {roomId: result.data.roomId}, users: result.users});
+        }
+    });
+
+    socket.on('towers', (data, callback) => {
+        if (unauth.has(socket.id) || !active.has(user)) {
+            callback({error: "Not authenticated"});
+            return;
+        }
+
+        let roomId = data.roomId;
+        let towers = data.towerData;
+        
+        let room = Array.from(rooms).find(r => r.id == roomId);
+
+        if (roomId == mainId || !room) {
+            callback({error: "Not a valid room"});
+            return;
+        }
+
+        if (!room.game) {
+            callback({error: "No game in progress"});
+            return;
+        }
+
+        console.log(`towers: `, roomId, towers);
+
+        let result = room.game.setTowers(socket, user, towers);
+
+        console.log(result);
+
+        if (result.error) {
+            callback({error: result.error});
+        }
+        else {
+            callback({data: {roomId: result.data.roomId}, users: result.users});
+        }
+    });
+
+    socket.on('info', (data, callback) => {
+        if (unauth.has(socket.id) || !active.has(user)) {
+            callback({error: "Not authenticated"});
+            return;
+        }
+
+        let roomId = data.roomId;
+        let playerInfo = data.playerData;
+        
+        let room = Array.from(rooms).find(r => r.id == roomId);
+
+        if (roomId == mainId || !room) {
+            callback({error: "Not a valid room"});
+            return;
+        }
+
+        if (!room.game) {
+            callback({error: "No game in progress"});
+            return;
+        }
+
+        console.log(`info: `, roomId, playerInfo);
+
+        let result = room.game.setInfo(socket, user, playerInfo);
+
+        console.log(result);
 
         if (result.error) {
             callback({error: result.error});
