@@ -24,7 +24,7 @@ const GameState = {
 const TowerTypes = {
     "Base": 0,
     "Gun": 1,
-    "Miner" : 2,
+    "Miner": 2,
 }
 
 class User {
@@ -58,15 +58,15 @@ class Chat {
 
     sendMessage(username, message) {
         if (username != "Server" && !this.room.users.find(u => u.username === username)) {
-            return {error: "Not in room"};
+            return { error: "Not in room" };
         }
-        
+
         if (message.trim().length > this.maxChars) {
-            return {error: "Message too long"};
+            return { error: "Message too long" };
         }
-        
+
         if (message.trim().length <= 1) {
-            return {error: "Message too short"};
+            return { error: "Message too short" };
         }
 
         if (this.filterProfanity) {
@@ -82,10 +82,10 @@ class Chat {
         };
 
         this.messages.push(data);
-        
-        io.to(this.room.id).emit("message", {data: data, users: this.room.getUsers()});
 
-        return {data: data, users: this.room.getUsers()};
+        io.to(this.room.id).emit("message", { data: data, users: this.room.getUsers() });
+
+        return { data: data, users: this.room.getUsers() };
     }
 }
 
@@ -98,56 +98,56 @@ class Game {
         this.room = data.room;
         this.allReady = false;
         this.gameState = GameState.STARTING;
-        
+
         this.room.users.forEach(user => {
-            user.gameInfo = {ready: false, life: 100, money: 10, production: 10, towers: [], units: []};
+            user.gameInfo = { ready: false, life: 100, money: 10, production: 10, towers: [], units: [] };
         });
     }
 
     async setReady(user) {
         if (!this.room.users.find(u => u.id === user.id)) {
-            return {error: "Not in game"};
+            return { error: "Not in game" };
         }
 
         if (this.gameState !== GameState.STARTING) {
-            return {error: "Game already started"};
+            return { error: "Game already started" };
         }
-        
+
         user.gameInfo.ready = true;
-        
+
         if (this.room.users.every(user => user.gameInfo.ready)) {
             this.allReady = true;
             this.gameState = GameState.ACTIVE;
 
             let sockets = await io.in(this.room.id).fetchSockets();
 
-            let base1 = Math.floor(Math.random()* 1000);
+            let base1 = Math.floor(Math.random() * 1000);
             let base2 = base1;
             while (base2 == base1) {
-                base2 = Math.floor(Math.random()* 1000);
+                base2 = Math.floor(Math.random() * 1000);
             }
-            
+
             let i = 0;
             for (const socket of sockets) {
                 io.to(socket.id).emit("allReady", {
-                    data: {roomId: this.room.id },
-                    bases: {friendlyBase: i == 0 ? base1 : base2, enemyBase: i == 0 ? base2 : base1},
+                    data: { roomId: this.room.id },
+                    bases: { friendlyBase: i == 0 ? base1 : base2, enemyBase: i == 0 ? base2 : base1 },
                     users: this.room.getUsers()
                 });
                 i++;
             }
         }
-        
-        return {data: {roomId: this.room.id}, users: this.room.getUsers()};
+
+        return { data: { roomId: this.room.id }, users: this.room.getUsers() };
     }
 
     setTowers(socket, user, towers) {
         if (!this.room.users.find(u => u.id === user.id)) {
-            return {error: "Not in game"};
+            return { error: "Not in game" };
         }
 
         if (this.gameState !== GameState.ACTIVE) {
-            return {error: "Game not running"};
+            return { error: "Game not running" };
         }
 
         let newTowers = towers.map(tower => {
@@ -160,10 +160,10 @@ class Game {
         user.gameInfo.towers = towers.filter(tower => tower.team == 0);
 
         // emit to everyone but the user
-        socket.broadcast.to(this.room.id).emit("setTowers", {data: {roomId: this.room.id}, towerData: newTowers, users: this.room.getUsers()});
+        socket.broadcast.to(this.room.id).emit("setTowers", { data: { roomId: this.room.id }, towerData: newTowers, users: this.room.getUsers() });
 
         return {
-            data: {roomId: this.room.id},
+            data: { roomId: this.room.id },
             towerData: newTowers,
             users: this.room.getUsers()
         };
@@ -171,11 +171,11 @@ class Game {
 
     setInfo(socket, user, info) {
         if (!this.room.users.find(u => u.id === user.id)) {
-            return {error: "Not in game"};
+            return { error: "Not in game" };
         }
 
         if (this.gameState !== GameState.ACTIVE) {
-            return {error: "Game not running"};
+            return { error: "Game not running" };
         }
 
         user.gameInfo.life = info.life;
@@ -189,21 +189,21 @@ class Game {
         };
 
         let otherUser = this.room.users.find(u => u.id != user.id);
-        
+
         let otherInfo = {
             life: otherUser.gameInfo.life,
             money: otherUser.gameInfo.money,
             production: otherUser.gameInfo.production,
         };
 
-        socket.broadcast.to(this.room.id).emit("setInfo", {data: {roomId: this.room.id}, enemyInfo: newInfo, friendlyInfo: otherInfo, users: this.room.getUsers()});
+        socket.broadcast.to(this.room.id).emit("setInfo", { data: { roomId: this.room.id }, enemyInfo: newInfo, friendlyInfo: otherInfo, users: this.room.getUsers() });
 
         if (user.gameInfo.life <= 0 || otherUser.gameInfo.life <= 0) {
             this.gameOver();
         }
 
         return {
-            data: {roomId: this.room.id},
+            data: { roomId: this.room.id },
             enemyInfo: otherInfo,
             friendlyInfo: newInfo,
             users: this.room.getUsers()
@@ -212,12 +212,12 @@ class Game {
 
     gameOver() {
         if (this.gameState !== GameState.ACTIVE) {
-            return {error: "Game not running"};
+            return { error: "Game not running" };
         }
-        
+
         if (this.room.users.length != 2) {
             let winner = this.room.users.find(user => user.gameInfo.life > 0);
-            io.to(this.room.id).emit("gameOver", {data: {roomId: this.room.id}, winner: winner.username, winType: "abandonment", users: this.room.getUsers()});
+            io.to(this.room.id).emit("gameOver", { data: { roomId: this.room.id }, winner: winner.username, winType: "abandonment", users: this.room.getUsers() });
         }
         else {
             let loser = this.room.users.find(user => user.gameInfo.life <= 0);
@@ -225,16 +225,16 @@ class Game {
             if (loser) {
                 let winner = this.room.users.find(user => user.id != loser.id);
 
-                io.to(this.room.id).emit("gameOver", {data: {roomId: this.room.id}, winner: winner.username, loser: loser.username, winType: "survival", users: this.room.getUsers()});
+                io.to(this.room.id).emit("gameOver", { data: { roomId: this.room.id }, winner: winner.username, loser: loser.username, winType: "survival", users: this.room.getUsers() });
             }
             else {
-                return {error: "Win conditions not met"};
+                return { error: "Win conditions not met" };
             }
         }
-        
+
 
         this.gameState = GameState.ENDED;
-        
+
         this.room.users.forEach(user => {
             user.gameInfo = null;
         });
@@ -252,9 +252,9 @@ class Room {
         if (id.length != 4) {
             throw new Error("Room id must be 4 characters");
         }
-        
+
         id = id.toUpperCase();
-        
+
         if (!/^[A-Z0-9]+$/.test(id)) {
             throw new Error("Room id must only contain letters and numbers");
         }
@@ -262,24 +262,24 @@ class Room {
         this.id = id;
         this.max = max;
         this.users = users;
-        this.chat = new Chat({room: this, max: max, users: users});
+        this.chat = new Chat({ room: this, max: max, users: users });
         this.game = null;
     }
 
     startGame() {
         if (this.game) {
-            return {error: "Game already started"};
-        } 
-
-        if (this.users.length < 2) {
-            return {error: "Not enough players"};
+            return { error: "Game already started" };
         }
 
-        this.game = new Game({room: this});
+        if (this.users.length < 2) {
+            return { error: "Not enough players" };
+        }
 
-        io.to(this.id).emit("start", {data: {roomId: this.id}, users: this.getUsers()});
+        this.game = new Game({ room: this });
 
-        return {data: {roomId: this.id}, users: this.getUsers()};
+        io.to(this.id).emit("start", { data: { roomId: this.id }, users: this.getUsers() });
+
+        return { data: { roomId: this.id }, users: this.getUsers() };
     }
 
     endGame() {
@@ -300,8 +300,8 @@ class Room {
 
         this.users.push(user);
         user.room = this;
-        
-        io.to(this.id).emit("users", {data: {roomId: this.id}, users: this.getUsers()});
+
+        io.to(this.id).emit("users", { data: { roomId: this.id }, users: this.getUsers() });
 
         if (this.id != mainId) {
             this.chat.sendServerMessage(`${user.username} has joined the room.`);
@@ -312,7 +312,7 @@ class Room {
         if (this.id == mainId) {
             this.users = this.users.filter(u => u.id != user.id);
             user.room = null;
-            
+
             console.log("menu kinda removing user " + JSON.stringify(user), this.users, this.id);
 
             return;
@@ -321,10 +321,10 @@ class Room {
         this.users = this.users.filter(u => u.id != user.id);
         user.room = null;
 
-        io.to(this.id).emit("users", {data: {roomId: this.id}, users: this.getUsers()});
+        io.to(this.id).emit("users", { data: { roomId: this.id }, users: this.getUsers() });
 
         console.log("really removing user " + JSON.stringify(user), this.users, this.id);
-        
+
         if (this.game?.gameState == GameState.ACTIVE) {
             this.endGame();
         }
@@ -337,7 +337,7 @@ class Room {
     }
 
     getUsers() {
-        return this.users.map(u => {return {username: u.username};});
+        return this.users.map(u => { return { username: u.username }; });
     }
 }
 
@@ -361,19 +361,19 @@ io.on('connection', (socket) => {
     let user = null;
 
     unauth.add(socket.id);
-    
+
     socket.on("auth", (data, callback) => {
         let authId = data.id;
         let authUsername = data.username;
         let authPasshash = data.passhash;
 
         console.log(user);
-        
+
         if (Array.from(active).filter(u => u.username == authUsername).length > 0) {
-            callback({error: "Already logged in"});
+            callback({ error: "Already logged in" });
             return;
         }
-        
+
         if (unauth.has(socket.id)) {
             let valid = Array.from(users).find(u => (u.username == authUsername && (u.id == authId || u.passhash == authPasshash)));
 
@@ -381,67 +381,73 @@ io.on('connection', (socket) => {
                 unauth.delete(socket.id);
                 user = valid;
                 active.add(user);
-                
+
                 joinRoom(mainRoom);
 
                 console.log("User authenticated");
-                callback({data: {
-                    id: user.id,
-                    username: user.username,
-                    passhash: user.passhash
-                }});
-                
+                callback({
+                    data: {
+                        id: user.id,
+                        username: user.username,
+                        passhash: user.passhash
+                    }
+                });
+
             }
             else {
                 console.log("No such player exists");
-                callback({error: "No such player exists"});
+                callback({ error: "No such player exists" });
             }
         }
         else {
             console.log("Try logging out");
-            callback({error: "Try logging out"});
+            callback({ error: "Try logging out" });
         }
     });
-    
+
     socket.on('register', (data, callback) => {
         let username = data.username;
         let passhash = data.passhash;
 
         if (username.length < 3 || username.length > 12) {
-            callback({error: "Username must be between 3 and 12 characters"});
+            callback({ error: "Username must be between 3 and 12 characters" });
             return;
         }
-        
+
         if (Array.from(users).find(u => u.username == username)) {
             var found = Array.from(users).find(u => u.username == username && u.passhash == passhash);
             if (found) {
-                callback({data: {
-                    id: found.id,
-                    username: found.username,
-                    passhash: found.passhash
-                }});
+                callback({
+                    data: {
+                        id: found.id,
+                        username: found.username,
+                        passhash: found.passhash
+                    }
+                });
                 return;
             }
             else {
-                callback({error: "Username already taken"});
+                callback({ error: "Username already taken" });
                 return;
             }
         }
-        
+
         let id = uuidv4();
         let newUser = new User(id, username, passhash);
         users.add(newUser);
-        
-        callback({data: {
-            id: newUser.id,
-            username: newUser.username,
-            passhash: newUser.passhash
-        }});
+
+        callback({
+            data: {
+                id: newUser.id,
+                username: newUser.username,
+                passhash: newUser.passhash
+            }
+        });
     });
 
     function leaveRoom() {
         let room = user?.room;
-        
+
         if (room) {
             console.log("leaving room " + room.id);
 
@@ -461,7 +467,7 @@ io.on('connection', (socket) => {
 
         socket.join(room.id);
         room.addUser(user);
-        
+
         return room.getUsers();
     }
 
@@ -469,7 +475,7 @@ io.on('connection', (socket) => {
         console.log("joining room", data.roomId);
 
         if (unauth.has(socket.id) || !active.has(user)) {
-            callback({error: "Not authenticated"});
+            callback({ error: "Not authenticated" });
             return;
         }
 
@@ -480,7 +486,7 @@ io.on('connection', (socket) => {
 
             let users = mainRoom.getUsers();
 
-            callback({data: {roomId: mainId}, users: users});
+            callback({ data: { roomId: mainId }, users: users });
 
             let messageData = {
                 roomId: mainId,
@@ -489,40 +495,40 @@ io.on('connection', (socket) => {
                 timestamp: Date.now()
             };
 
-            socket.emit("message", {data: messageData, users: users});
-            
+            socket.emit("message", { data: messageData, users: users });
+
             return;
         }
 
         let room = Array.from(rooms).find(r => r.id == roomId);
 
         if (!room) {
-            callback({error: "No such room exists"});
+            callback({ error: "No such room exists" });
             return;
         }
-        
+
         if (user?.room?.id == room.id) {
-            callback({error: "Already in room"});
+            callback({ error: "Already in room" });
             return;
         }
 
         if (room.users.length >= room.max) {
-            callback({error: "Room is full"});
+            callback({ error: "Room is full" });
             return;
         }
-        
+
         let safeUsers = joinRoom(room);
 
-        callback({data: {roomId: room.id}, users: safeUsers});
+        callback({ data: { roomId: room.id }, users: safeUsers });
     });
 
     socket.on('hostRoom', (callback) => {
         if (unauth.has(socket.id) || !active.has(user)) {
-            callback({error: "Not authenticated"});
+            callback({ error: "Not authenticated" });
             return;
         }
 
-        let id = Array.from({length: 4}, () => Math.floor(Math.random() * 36).toString(36).toUpperCase()).join('');
+        let id = Array.from({ length: 4 }, () => Math.floor(Math.random() * 36).toString(36).toUpperCase()).join('');
         console.log("hosting room", id);
 
         let room = new Room(id, 2, []);
@@ -532,16 +538,16 @@ io.on('connection', (socket) => {
 
             let safeUsers = joinRoom(room);
 
-            callback({data: {roomId: room.id}, users: safeUsers});
+            callback({ data: { roomId: room.id }, users: safeUsers });
         }
         else {
-            callback({error: "Room already exists"});
+            callback({ error: "Room already exists" });
         }
     });
 
     socket.on('message', (data, callback) => {
         if (unauth.has(socket.id) || !active.has(user)) {
-            callback({error: "Not authenticated"});
+            callback({ error: "Not authenticated" });
             return;
         }
 
@@ -554,47 +560,51 @@ io.on('connection', (socket) => {
             var result = mainRoom.chat.sendMessage(user.username, message);
 
             if (!result?.error) {
-                callback({data: {
-                    message: result.data.message,
-                    roomId: result.data.roomId,
-                    username: result.data.username,
-                    timestamp: result.data.timestamp,
-                }, users: result.users});
+                callback({
+                    data: {
+                        message: result.data.message,
+                        roomId: result.data.roomId,
+                        username: result.data.username,
+                        timestamp: result.data.timestamp,
+                    }, users: result.users
+                });
             }
             else {
-                callback({error: result.error});
+                callback({ error: result.error });
             }
             return;
         }
-        
+
         if (!user.room) {
-            callback({error: "Not in a room"});
+            callback({ error: "Not in a room" });
             return;
         }
 
         if (roomId != user.room.id) {
-            callback({error: "Invalid room ID"});
+            callback({ error: "Invalid room ID" });
             return;
         }
-        
+
         var result = user.room.chat.sendMessage(user.username, message);
 
         if (!result?.error) {
-            callback({data: {
-                message: result.data.message,
-                roomId: result.data.roomId,
-                username: result.data.username,
-                timestamp: result.data.timestamp,
-            }, users: result.users});
+            callback({
+                data: {
+                    message: result.data.message,
+                    roomId: result.data.roomId,
+                    username: result.data.username,
+                    timestamp: result.data.timestamp,
+                }, users: result.users
+            });
         }
         else {
-            callback({error: result.error});
+            callback({ error: result.error });
         }
     });
 
     socket.on('startMatch', (data, callback) => {
         if (unauth.has(socket.id) || !active.has(user)) {
-            callback({error: "Not authenticated"});
+            callback({ error: "Not authenticated" });
             return;
         }
 
@@ -604,24 +614,24 @@ io.on('connection', (socket) => {
         let room = Array.from(rooms).find(r => r.id == roomId);
 
         if (roomId == mainId || !room) {
-            callback({error: "Not a valid room"});
+            callback({ error: "Not a valid room" });
             return;
         }
 
         var result = room.startGame();
 
         if (result.error) {
-            callback({error: result.error});
+            callback({ error: result.error });
             return;
         }
         else {
-            callback({data: {roomId: result.data.roomId}, users: result.users});
+            callback({ data: { roomId: result.data.roomId }, users: result.users });
         }
     });
 
     socket.on('ready', async (data, callback) => {
         if (unauth.has(socket.id) || !active.has(user)) {
-            callback({error: "Not authenticated"});
+            callback({ error: "Not authenticated" });
             return;
         }
 
@@ -631,43 +641,43 @@ io.on('connection', (socket) => {
         let room = Array.from(rooms).find(r => r.id == roomId);
 
         if (roomId == mainId || !room) {
-            callback({error: "Not a valid room"});
+            callback({ error: "Not a valid room" });
             return;
         }
 
         if (!room.game) {
-            callback({error: "No game in progress"});
+            callback({ error: "No game in progress" });
             return;
         }
-        
+
         let result = await room.game.setReady(user);
 
         if (result.error) {
-            callback({error: result.error});
+            callback({ error: result.error });
         }
         else {
-            callback({data: {roomId: result.data.roomId}, users: result.users});
+            callback({ data: { roomId: result.data.roomId }, users: result.users });
         }
     });
 
     socket.on('towers', (data, callback) => {
         if (unauth.has(socket.id) || !active.has(user)) {
-            callback({error: "Not authenticated"});
+            callback({ error: "Not authenticated" });
             return;
         }
 
         let roomId = data.roomId;
         let towers = data.towerData;
-        
+
         let room = Array.from(rooms).find(r => r.id == roomId);
 
         if (roomId == mainId || !room) {
-            callback({error: "Not a valid room"});
+            callback({ error: "Not a valid room" });
             return;
         }
 
         if (!room.game) {
-            callback({error: "No game in progress"});
+            callback({ error: "No game in progress" });
             return;
         }
 
@@ -678,45 +688,45 @@ io.on('connection', (socket) => {
         console.log(result);
 
         if (result.error) {
-            callback({error: result.error});
+            callback({ error: result.error });
         }
         else {
-            callback({data: {roomId: result.data.roomId}, users: result.users});
+            callback({ data: { roomId: result.data.roomId }, users: result.users });
         }
     });
 
     socket.on('info', (data, callback) => {
         if (unauth.has(socket.id) || !active.has(user)) {
-            callback({error: "Not authenticated"});
+            callback({ error: "Not authenticated" });
             return;
         }
 
         let roomId = data.roomId;
         let playerInfo = data.playerData;
-        
+
         let room = Array.from(rooms).find(r => r.id == roomId);
 
         if (roomId == mainId || !room) {
-            callback({error: "Not a valid room"});
+            callback({ error: "Not a valid room" });
             return;
         }
 
         if (!room.game) {
-            callback({error: "No game in progress"});
+            callback({ error: "No game in progress" });
             return;
         }
 
-        console.log(`info: `, roomId, playerInfo);
+        //console.log(`info: `, roomId, playerInfo);
 
         let result = room.game.setInfo(socket, user, playerInfo);
 
-        console.log(result);
+        //console.log(result);
 
         if (result.error) {
-            callback({error: result.error});
+            callback({ error: result.error });
         }
         else {
-            callback({data: {roomId: result.data.roomId}, users: result.users});
+            callback({ data: { roomId: result.data.roomId }, users: result.users });
         }
     });
 
@@ -730,7 +740,7 @@ io.on('connection', (socket) => {
             active.delete(user);
             user = null;
         }
-        
+
         console.log('user disconnected');
     });
 });
